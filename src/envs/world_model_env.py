@@ -132,15 +132,34 @@ class WorldModelEnv:
 
     @torch.no_grad()
     def upsample_next_obs(self, next_obs: Tensor) -> Tuple[Tensor, List[Tensor]]:
-        # Upsampling the low resolution frame from the world model
-        low_res = F.interpolate(next_obs, scale_factor=self.sampler_upsampling.denoiser.cfg.upsampling_factor, mode="bicubic")
+        # Determine if we're using MPS device (Apple Silicon)
+        is_mps = torch.backends.mps.is_available() and next_obs.device.type == 'mps'
+
+        interpolation_mode = "bilinear" if is_mps else "bicubic"
+        align_corners = False if interpolation_mode == "bilinear" else None
+
+        # Upsampling the low-resolution frame from the world model
+        low_res = F.interpolate(
+            next_obs,
+            scale_factor=self.sampler_upsampling.denoiser.cfg.upsampling_factor,
+            mode=interpolation_mode,
+            align_corners=align_corners
+        )
 
         # Cropping the frame to remove the sides of the screen
         low_res = extract_roi(low_res, crop_frame)
 
         # Reshape the frame to the upsampler's expected size
-        size = (self.sampler_upsampling.denoiser.cfg.upsampling_frame_height, self.sampler_upsampling.denoiser.cfg.upsampling_frame_width)
-        low_res = F.interpolate(low_res, size=size, mode='bicubic')
+        size = (
+            self.sampler_upsampling.denoiser.cfg.upsampling_frame_height,
+            self.sampler_upsampling.denoiser.cfg.upsampling_frame_width
+        )
+        low_res = F.interpolate(
+            low_res,
+            size=size,
+            mode=interpolation_mode,
+            align_corners=align_corners
+        )
 
         return self.sampler_upsampling.sample(low_res.unsqueeze(1), None)
 
