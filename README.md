@@ -112,6 +112,22 @@ Note: The full resolution dataset is only for upsampler training and is not fit 
 
 ---
 
+## Developed by
+
+[@shahar603](https://github.com/shahar603), [@j0nathanj](https://github.com/j0nathanj), [@galnivs](https://github.com/galnivs)
+
+## BibTeX
+```
+@misc{enigma2025multiverse,
+  title={Introducing Multiverse: The First AI Multiplayer World Model},
+  author={Enigma team},
+  year={2025},
+  url={https://enigma.inc/blog}
+}
+```
+
+---
+
 ## Outside resources
 
 - DIAMOND - https://github.com/eloialonso/diamond
