@@ -23,7 +23,14 @@ pip install -r requirements.txt
 python src/play.py --compile
 ```
 
-> Note on Apple Silicon you must enable CPU fallback for MPS backend with PYTORCH_ENABLE_MPS_FALLBACK=1 python src/play.py
+> **Apple Silicon:** `src/play.py` runs on the MPS backend, no environment variables needed, as long as
+> torch is 2.6 or newer (see `requirements.txt`). Earlier versions do not implement `aten::upsample_bicubic2d`
+> on MPS, which is why `PYTORCH_ENABLE_MPS_FALLBACK=1` used to be required — it sent the two bicubic
+> resizes in `upsample_next_obs` to the CPU on every frame. Leave `--compile` off on Apple Silicon:
+> inductor is slower than eager there, and `src/play.py` only compiles on CUDA anyway.
+>
+> Rendering is much slower than on a CUDA GPU — expect single-digit frame rates rather than the
+> default 30. Use `python scripts/bench_inference.py` to measure your machine.
 
 When running this command, you will be prompted with the controls. Press `enter` to start:
 ![img.png](assets/img.png)

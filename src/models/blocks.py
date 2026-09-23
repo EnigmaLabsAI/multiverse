@@ -13,6 +13,12 @@ GN_GROUP_SIZE = 32
 GN_EPS = 1e-5
 ATTN_HEAD_DIM = 8
 
+# Largest attention matrix, in elements, to materialize in one go. The full matrix is
+# (batch, n_head, hw, hw): in the upsampler's mid blocks that is 1 x 32 x 2948 x 2948,
+# i.e. 1.1 GB of fp32 for a single layer. Splitting the heads into groups caps that
+# transient allocation without changing the result.
+ATTN_MAX_MATRIX_ELEMS = 64 * 1024 * 1024  # 256 MB in fp32
+
 # Convs
 
 Conv1x1 = partial(nn.Conv2d, kernel_size=1, stride=1, padding=0)
@@ -59,15 +65,33 @@ class SelfAttention2d(nn.Module):
         nn.init.zeros_(self.out_proj.weight)
         nn.init.zeros_(self.out_proj.bias)
 
+    @staticmethod
+    def _attend(q: Tensor, k: Tensor, v: Tensor) -> Tensor:
+        att = (q @ k.transpose(-2, -1)) / math.sqrt(k.size(-1))
+        att = F.softmax(att, dim=-1)
+        return att @ v
+
     def forward(self, x: Tensor) -> Tensor:
         n, c, h, w = x.shape
         x = self.norm(x)
         qkv = self.qkv_proj(x)
         qkv = qkv.view(n, self.n_head * 3, c // self.n_head, h * w).transpose(2, 3).contiguous()
         q, k, v = [x for x in qkv.chunk(3, dim=1)]
-        att = (q @ k.transpose(-2, -1)) / math.sqrt(k.size(-1))
-        att = F.softmax(att, dim=-1)
-        y = att @ v
+
+        # Number of heads whose attention matrices fit in the budget at once. Every head is
+        # independent, so grouping them changes nothing but the size of the live allocation.
+        elems_per_head = n * (h * w) ** 2
+        group = max(1, min(self.n_head, ATTN_MAX_MATRIX_ELEMS // max(1, elems_per_head)))
+
+        if group == self.n_head:
+            y = self._attend(q, k, v)
+        else:
+            y = torch.cat(
+                [self._attend(q[:, i : i + group], k[:, i : i + group], v[:, i : i + group])
+                 for i in range(0, self.n_head, group)],
+                dim=1,
+            )
+
         y = y.transpose(2, 3).reshape(n, c, h, w)
         return x + self.out_proj(y)
 
